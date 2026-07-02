@@ -1,0 +1,271 @@
+================================================================================
+QUICK TESTING GUIDE - ACTUAL DATABASE QUERIES
+================================================================================
+
+GOAL: Test your trained models with real execution data from your database
+
+TIME NEEDED: 30 minutes (10 min export + 20 min setup)
+
+================================================================================
+STEP 1: EXPORT EXECUTION PLANS FROM YOUR DATABASE (10 MIN)
+================================================================================
+
+POSTGRESQL USERS:
+-----------------
+Option A - Quick (one query):
+  EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
+  SELECT * FROM your_table WHERE your_condition;
+
+Option B - Batch (multiple queries):
+  Run your actual queries with EXPLAIN:
+  EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM table1;
+  EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM table2 JOIN table3;
+  ... repeat for multiple queries ...
+
+Option C - Automatic extraction:
+  Edit: extract_execution_plans.py
+  Update DB_CONFIG with your credentials
+  Add your queries to QUERIES list
+  Run: python3 extract_execution_plans.py
+
+
+MYSQL USERS:
+-----------
+Option A - Quick (one query):
+  EXPLAIN FORMAT=JSON
+  SELECT * FROM your_table WHERE your_condition;
+
+Option B - Export to CSV:
+  SELECT 
+    1, estimated_rows, actual_rows, startup_cost, total_cost,
+    actual_startup_time, actual_total_time, plan_width, loops,
+    ... (all 24 columns)
+  INTO OUTFILE '/tmp/queries.csv'
+  WITH CSV HEADER;
+
+================================================================================
+STEP 2: CREATE CSV FILE WITH YOUR DATA (5 MIN)
+================================================================================
+
+Save to: data/raw/actual_queries.csv
+
+Format:
+  - First row: column headers
+  - Must have ALL 24 columns
+  - Columns must be in EXACT order below:
+
+query_template,estimated_rows,actual_rows,startup_cost,total_cost,actual_startup_time,actual_total_time,plan_width,loops,base_cardinality,output_cardinality,input_cardinality,filter_selectivity,join_ratio,cost_per_row,time_per_loop,node_type,node_depth,parallel_awareness,subtree_cardinality,num_children,cost_to_row_ratio,estimated_actual_ratio,time_cost_ratio
+
+Example CSV:
+1,100,95,10.0,50.0,2.0,5.0,512,1,100,95,100,0.95,1.0,0.5,5.0,0,1,1,100,0,0.526,1.053,0.10
+2,1000,950,50.0,450.0,10.5,45.2,1024,3,500,480,490,0.85,0.95,0.45,15.0,1,5,1,510,2,0.474,1.053,0.10
+
+IMPORTANT:
+  - Include actual_total_time (from EXPLAIN ANALYZE, not just EXPLAIN)
+  - This is critical for accuracy validation
+  - Minimum 10 queries recommended, 50+ queries ideal
+
+================================================================================
+STEP 3: RUN TEST SCRIPT (5 MIN)
+================================================================================
+
+Command:
+  python3 test_with_actual_data.py
+
+This will:
+  ✅ Load your CSV file
+  ✅ Load all 3 trained models
+  ✅ Make predictions for each query
+  ✅ Calculate accuracy metrics
+  ✅ Compare predictions vs actual times
+  ✅ Save results to CSV files
+
+================================================================================
+STEP 4: VIEW RESULTS (5 MIN)
+================================================================================
+
+All predictions:
+  cat results/actual_data_predictions.csv
+
+Accuracy comparison:
+  cat results/actual_data_accuracy.csv
+
+Look for:
+  - PostgreSQL MAE (mean absolute error)
+  - MySQL MAE
+  - Unified MAE
+  - Which model performed best?
+  - ±10% accuracy percentage
+
+Example output:
+  PostgreSQL Model:
+    MAE: 15.3 ms
+    Error: 8.5%
+    Within ±10%: 85.2%
+
+  MySQL Model:
+    MAE: 12.1 ms
+    Error: 6.2%
+    Within ±10%: 91.3%
+
+  🏆 Best Model: MySQL
+
+================================================================================
+COLUMN REFERENCE (24 TOTAL)
+================================================================================
+
+query_template         - Query type ID (1-22)
+estimated_rows         - Optimizer's estimated row count
+actual_rows           - Actual rows returned
+startup_cost          - Cost until first row
+total_cost            - Total execution cost
+actual_startup_time   - Time to first row (ms)
+actual_total_time     - Total execution time (ms) ← IMPORTANT
+plan_width            - Width of result rows
+loops                 - Number of executions
+base_cardinality      - Base table cardinality
+output_cardinality    - Output cardinality
+input_cardinality     - Input cardinality
+filter_selectivity    - Filter selectivity (0-1)
+join_ratio            - Join selectivity (0-1)
+cost_per_row          - Cost per output row
+time_per_loop         - Time per loop (ms)
+node_type             - Plan node type (0-5)
+node_depth            - Depth in plan tree
+parallel_awareness    - Parallel support (0/1)
+subtree_cardinality   - Subtree cardinality
+num_children          - Number of child nodes
+cost_to_row_ratio     - Derived: total_cost / actual_rows
+estimated_actual_ratio - Derived: estimated_rows / actual_rows
+time_cost_ratio       - Derived: actual_total_time / total_cost
+
+NODE TYPE ENCODING:
+  0 = Seq Scan
+  1 = Index Scan
+  2 = Hash Join
+  3 = Nested Loop
+  4 = Bitmap Index Scan
+  5 = Bitmap Heap Scan
+
+================================================================================
+EXPECTED RESULTS
+================================================================================
+
+Good Model Performance:
+  ✅ Within ±10% accuracy: > 80%
+  ✅ MAE: < 20 ms
+  ✅ MAPE: < 15%
+
+Excellent Model Performance:
+  ✅ Within ±10% accuracy: > 90%
+  ✅ MAE: < 10 ms
+  ✅ MAPE: < 10%
+
+If results are poor (< 70% accuracy):
+  → You may need more/different training data
+  → Retrain with: python3 train_multi_db.py
+  → See: MULTI_DB_SUMMARY.md for next steps
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+ERROR: "File not found: data/raw/actual_queries.csv"
+  FIX: Create your CSV file and save to that path
+
+ERROR: "Missing columns"
+  FIX: Ensure CSV has all 24 columns in correct order
+
+ERROR: "Column 'actual_total_time' not found"
+  FIX: Use EXPLAIN ANALYZE (not just EXPLAIN) to capture actual times
+
+PREDICTIONS LOOK WRONG:
+  FIX: Check if you're using the right model for your database type
+  FIX: Ensure node_type is encoded correctly (0-5)
+
+================================================================================
+QUICK COMMANDS
+================================================================================
+
+View sample data test results:
+  cat results/test_results.csv
+
+View actual data predictions:
+  cat results/actual_data_predictions.csv
+
+View accuracy metrics:
+  cat results/actual_data_accuracy.csv
+
+Reload models in Python:
+  python3 -c "import pickle; m = pickle.load(open('models/unified_lightgbm.pkl', 'rb')); print(m.num_feature())"
+
+Create sample CSV to try:
+  head -5 data/raw/postgresql_queries.csv > data/raw/actual_queries.csv
+
+================================================================================
+DECISION TREE
+================================================================================
+
+START HERE
+  │
+  ├─ Do you have a PostgreSQL database?
+  │   └─ YES → Export execution plans (see STEP 1)
+  │   └─ NO → Do you have MySQL?
+  │       └─ YES → Export execution plans (see STEP 1)
+  │       └─ NO → Read HOW_TO_GET_ACTUAL_DATA.md
+  │
+  ├─ Did you create data/raw/actual_queries.csv?
+  │   └─ YES → Run: python3 test_with_actual_data.py
+  │   └─ NO → Go back to STEP 2
+  │
+  ├─ Did the test complete successfully?
+  │   └─ YES → Check results in results/actual_data_accuracy.csv
+  │   └─ NO → See TROUBLESHOOTING section
+  │
+  └─ Is accuracy > 80%?
+      └─ YES → Ready to deploy! Use that model
+      └─ NO → Retrain with more data: python3 train_multi_db.py
+
+================================================================================
+NEXT STEPS AFTER TESTING
+================================================================================
+
+1. ✅ If accuracy is GOOD (>80%):
+   - Deploy to production
+   - Use MULTI_DB_USAGE_GUIDE.md for integration
+   - Monitor accuracy over time
+
+2. ⚠️ If accuracy is POOR (<70%):
+   - Collect more training data
+   - Retrain: python3 train_multi_db.py
+   - Try feature engineering improvements
+   - See MULTI_DB_SUMMARY.md for ideas
+
+3. 🔄 For ongoing maintenance:
+   - Retrain monthly with new queries
+   - Monitor accuracy metrics
+   - Update model if drift detected
+
+================================================================================
+REFERENCE FILES
+================================================================================
+
+For detailed help:
+  - HOW_TO_GET_ACTUAL_DATA.md     - Complete data extraction guide
+  - TESTING_GUIDE.md              - 3 methods to test (detailed)
+  - MULTI_DB_USAGE_GUIDE.md       - How to use models in code
+  - MULTI_DB_SUMMARY.md           - Full project summary
+
+For scripts:
+  - test_models.py                - Test with sample data (already done)
+  - test_with_actual_data.py      - Test with your data (use this next)
+  - extract_execution_plans.py    - Auto-extract from PostgreSQL
+
+For models:
+  - models/postgresql_lightgbm.pkl
+  - models/mysql_lightgbm.pkl
+  - models/unified_lightgbm.pkl
+
+================================================================================
+READY? GO TO STEP 1 ABOVE ➜
+================================================================================
