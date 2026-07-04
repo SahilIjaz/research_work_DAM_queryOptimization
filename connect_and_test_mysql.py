@@ -218,7 +218,10 @@ for query_name, query in queries:
 
             execution_plans.append(features)
             print(f"   ✅ Extracted execution plan")
-            print(f"      Cost: {features['total_cost']:.2f}")
+            try:
+                print(f"      Cost: {float(features['total_cost']):.2f}")
+            except:
+                print(f"      Cost: {features['total_cost']}")
 
     except Error as e:
         print(f"   ⚠️  Error: {e}")
