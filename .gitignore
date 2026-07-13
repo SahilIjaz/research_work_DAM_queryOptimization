@@ -12,3 +12,6 @@ build/
 data/raw/
 results/
 .env
+data/tpch_sf1/
+catboost_info/
+~$*.docx
